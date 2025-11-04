@@ -1,0 +1,408 @@
+# ============================================================
+# ALS Assistant Configuration
+# ============================================================
+# Complete, self-contained configuration for ALS Assistant application.
+# All framework and application settings in one file for transparency.
+# ============================================================
+
+build_dir: ./build
+
+# Root directory (absolute path)
+project_root: ${PROJECT_ROOT}
+
+# Application Registry
+registry_path: ./src/als_assistant/registry.py
+
+# ============================================================
+# DEPLOYED SERVICES
+# ============================================================
+# Controls which containers are started when running deployment
+
+deployed_services:
+  # Framework services
+  - jupyter
+  - open_webui
+  - pipelines
+  
+  # ALS Assistant services
+  - mongo
+  - pv_finder
+  - langfuse
+
+
+# ============================================================
+# MODEL CONFIGURATION
+# ============================================================
+# Framework models (8 required) + ALS Assistant models (custom names)
+
+models:
+  # Framework Models (RESERVED names - required)
+  orchestrator:
+    provider: cborg
+    model_id: anthropic/claude-sonnet
+  response:
+    provider: cborg
+    model_id: google/gemini-flash
+    max_tokens: 5000
+  classifier:
+    provider: ollama
+    model_id: mistral:7b
+  approval:
+    provider: ollama
+    model_id: mistral:7b
+  task_extraction:
+    provider: cborg
+    model_id: google/gemini-flash
+    max_tokens: 1024
+  memory:
+    provider: cborg
+    model_id: google/gemini-flash
+    max_tokens: 256
+  python_code_generator:
+    provider: cborg
+    model_id: anthropic/claude-haiku
+    max_tokens: 4096
+  time_parsing:
+    provider: ollama
+    model_id: mistral:7b
+    max_tokens: 512
+
+  # ALS Assistant Models (unique names - no conflict with framework)
+  data_analysis:
+    provider: cborg
+    model_id: anthropic/claude-sonnet
+  machine_operations:
+    provider: cborg
+    model_id: anthropic/claude-sonnet
+    max_tokens: 4096
+  data_visualization:
+    provider: cborg
+    model_id: anthropic/claude-sonnet
+    max_tokens: 4096
+  launcher:
+    provider: cborg
+    model_id: google/gemini-flash
+    max_tokens: 4096
+
+  # Nested ALS Assistant models
+  pv_finder:
+    keyword:
+      provider: cborg
+      model_id: google/gemini-flash
+      max_tokens: 4096
+    query_splitter:
+      provider: cborg
+      model_id: google/gemini-flash
+      max_tokens: 4096
+    pv_query:
+      provider: cborg
+      model_id: google/gemini-flash
+      max_tokens: 4096
+
+# ============================================================
+# SERVICE CONFIGURATION
+# ============================================================
+# Framework services (3 required) + ALS Assistant services (custom names)
+
+services:
+  # Framework Services (RESERVED names)
+  jupyter:
+    path: ./services/jupyter
+    containers:
+      read:
+        name: jupyter-read
+        hostname: jupyter-read
+        port_host: 8088
+        port_container: 8088
+        execution_modes: ["read_only"]
+      write:
+        name: jupyter-write
+        hostname: jupyter-write
+        port_host: 8089
+        port_container: 8088
+        execution_modes: ["write_access"]
+    copy_src: true
+    render_kernel_templates: true
+    # Framework is now pip-installable (v0.7.4+) - no need to copy source
+    # additional_dirs: []  # Add custom directories to copy if needed
+
+  open_webui:
+    path: ./services/open-webui
+    hostname: appsdev2
+    port_host: 8080
+    port_container: 8080
+
+  pipelines:
+    path: ./services/pipelines
+    port_host: 9099
+    port_container: 9099
+    copy_src: true
+    additional_dirs:
+      - interfaces
+
+  # ALS Assistant Services (unique names)
+  pv_finder:
+    path: ./services/pv_finder
+    name: pv-finder
+    port_host: 8051
+    port_container: 8051
+    copy_src: true
+
+  mongo:
+    name: mongo
+    path: ./services/mongo
+    port_host: 27017
+    port_container: 27017
+    copy_src: true
+
+  mongo_express:
+    name: mongo-express
+    port_host: 8081
+    port_container: 8081
+    depends_on: [mongo]
+    environment:
+      ME_CONFIG_MONGODB_URL: "mongodb://mongo:27017/"
+      ME_CONFIG_BASICAUTH_USERNAME: "admin"
+      ME_CONFIG_BASICAUTH_PASSWORD: "admin123"
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+    copy_src: false
+
+  langfuse:
+    path: ./services/langfuse
+    name: langfuse
+    copy_src: false
+
+# ============================================================
+# SAFETY CONTROLS
+# ============================================================
+
+# Approval workflow for sensitive operations
+approval:
+  global_mode: "selective"   # Options: disabled | selective | all_capabilities
+  capabilities:
+    python_execution:
+      enabled: true
+      mode: "epics_writes"   # Options: disabled | epics_writes | all_code
+    memory:
+      enabled: true
+
+# Execution limits and safety controls
+execution_control:
+  # EPICS writes (hardware control) - Master safety switch
+  epics:
+    writes_enabled: false    # Set true only for production hardware control
+  
+  # Agent control
+  agent_control:
+    task_extraction_bypass_enabled: false
+    capability_selection_bypass_enabled: false
+  
+  # Safety limits
+  limits:
+    max_reclassifications: 1
+    max_planning_attempts: 2
+    max_step_retries: 3
+    max_execution_time_seconds: 3000
+    graph_recursion_limit: 100
+    max_concurrent_classifications: 5
+    
+# ============================================================
+# SYSTEM CONFIGURATION
+# ============================================================
+
+system:
+  timezone: ${TZ:-America/Los_Angeles}
+
+# File paths - Data storage organization
+file_paths:
+  agent_data_dir: _agent_data
+  executed_python_scripts_dir: executed_scripts
+  execution_plans_dir: execution_plans
+  user_memory_dir: user_memory
+  registry_exports_dir: registry_exports
+  prompts_dir: prompts
+  checkpoints: checkpoints
+  # ALS Assistant specific
+  launcher_outputs_dir: launcher_outputs
+
+# ============================================================
+# EXECUTION INFRASTRUCTURE
+# ============================================================
+
+# Python execution configuration
+execution:
+  execution_method: "local"              # Options: local | container
+  python_env_path: ${LOCAL_PYTHON_VENV}  # Path to Python with dependencies
+  
+  # EPICS infrastructure (for hardware control applications)
+  epics:
+    timeout: 5.0
+    gateways:
+      read_only:
+        address: cagw-alsdmz.als.lbl.gov
+        port: 5064
+      write_access:
+        address: cagw-alsdmz.als.lbl.gov
+        port: 5084
+  
+  # Execution modes
+  modes:
+    read_only:
+      kernel_name: "python3-epics-readonly"
+      gateway: "read_only"
+      allows_writes: false
+      environment:
+        EPICS_CA_AUTO_ADDR_LIST: "NO"
+        EPICS_EXECUTION_MODE: "read_only"
+    write_access:
+      kernel_name: "python3-epics-write"
+      gateway: "write_access"
+      allows_writes: true
+      requires_approval: true
+      environment:
+        EPICS_CA_AUTO_ADDR_LIST: "NO"
+        EPICS_EXECUTION_MODE: "write_access"
+
+# Python executor settings
+python_executor:
+  max_generation_retries: 3
+  max_execution_retries: 3
+  execution_timeout_seconds: 600
+
+# ============================================================
+# APPLICATION METADATA
+# ============================================================
+
+pipeline:
+  name: "ALS Assistant"
+  startup_hooks:
+    - "initialization.setup_nltk_resources"
+    - "initialization.setup_system_packages"
+    - "initialization.setup_pv_finder_resources"
+
+# ============================================================
+# DEVELOPMENT & DEBUGGING
+# ============================================================
+
+development:
+  raise_raw_errors: false
+  prompts:
+    show_all: false
+    print_all: true
+    latest_only: true
+
+# ============================================================
+# LOGGING
+# ============================================================
+
+logging:
+  rich_tracebacks: true
+  show_traceback_locals: false
+  show_full_paths: false
+  
+  # Component colors (for terminal output)
+  logging_colors:
+    # Core framework components
+    base: 'white'
+    context: "light_steel_blue1"
+    router: "bright_magenta"
+    orchestrator: "cyan"
+    monitor: "dark_orange3"
+    classifier: "light_salmon1"
+    task_extraction: "thistle1"
+    error: "red"
+    gateway: "light_salmon1"
+    approval: "light_salmon1"
+    
+    # Framework capabilities
+    time_range_parsing: "dodger_blue1"
+    memory: "light_salmon1"
+    python: "light_salmon1"
+    
+    # Communication capabilities
+    respond: "thistle1"
+    clarify: "thistle1"
+    message_generator: "thistle1"
+    
+    # Execution infrastructure
+    python_generator: "sandy_brown"
+    python_analyzer: "salmon1"
+    python_executor: "misty_rose1"
+    python_workflow: "light_steel_blue1"
+    python_services: "light_steel_blue1"
+    
+    # Interface components
+    cli: "deep_sky_blue1"
+    pipeline: "deep_sky_blue1"
+    
+    # ALS Assistant pipeline
+    als_assistant_pipeline: 'white'
+    
+    # ALS Assistant capabilities
+    data_analysis: "deep_sky_blue1"
+    data_visualization: "dark_turquoise"
+    get_archiver_data: "turquoise2"
+    machine_operations: "deep_sky_blue2"
+    pv_address_finding: "dodger_blue2"
+    pv_value_retrieval: "dark_cyan"
+    live_monitoring: "dark_goldenrod1"
+    pv_finder: "light_steel_blue1"
+
+# ============================================================
+# API PROVIDERS
+# ============================================================
+
+api:
+  providers:
+    cborg:
+      api_key: ${CBORG_API_KEY}
+      base_url: https://api.cborg.lbl.gov/v1
+      timeout: 30
+    openai:
+      api_key: ${OPENAI_API_KEY}
+      base_url: https://api.openai.com/v1
+    gemini:
+      api_key: ${GOOGLE_API_KEY}
+      base_url: https://generativelanguage.googleapis.com/v1beta
+    anthropic:
+      api_key: ${ANTHROPIC_API_KEY_o}
+      base_url: https://api.anthropic.com
+    ollama:
+      api_key: ollama
+      base_url: http://doudna:11434
+      host: doudna
+      port: 11434
+
+# ============================================================
+# ALS ASSISTANT APPLICATION-SPECIFIC CONFIGURATION
+# ============================================================
+
+# ALS Assistant database configuration
+database:
+  ao_db:
+    database_name: agentic_db
+    collection_name: ao
+    host: ${MONGO_HOST:-mongo}
+
+# ALS Assistant external services
+external_services:
+  # ALS Archiver Service
+  archiver:
+    url: https://controls-web.als.lbl.gov
+  
+  # Phoebus Launcher Configuration
+  phoebus:
+    executable_path: ${PATH_TO_PHOEBUS_EXECUTABLE}
+
+# ALS Assistant benchmarks configuration
+benchmarks:
+  scenario_generator:
+    provider: cborg
+    model_id: anthropic/claude-sonnet
+    max_tokens: 4096
+  evaluator:
+    provider: cborg
+    model_id: anthropic/claude-sonnet
+    max_tokens: 2048
+
+

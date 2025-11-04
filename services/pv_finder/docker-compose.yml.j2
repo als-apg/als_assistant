@@ -1,0 +1,58 @@
+version: '3.8'
+
+name: als-agents
+
+services:
+  pv-finder-server:
+    build:
+      context: ./pv_finder
+      dockerfile: Dockerfile
+      args:
+        PV_FINDER_PORT: {{services.pv_finder.port_container}}
+    image: mcp/pv_finder # Optional: specify image name
+    volumes:
+      - ./pv_finder:/pv_finder
+      - ./pv_finder/repo_src:/repo/src:ro
+      - ./pv_finder/config.yml:/repo/config.yml:ro
+    pull_policy: missing
+    container_name: {{services.pv_finder.name}}
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    ports:
+      - "{{services.pv_finder.port_host}}:{{services.pv_finder.port_container}}"
+    environment:
+      - PYTHONPATH=/repo/src
+      - REPO_SRC=/repo/src
+      # Point to config.yml for framework initialization (required by new config system)
+      - CONFIG_FILE=/repo/config.yml
+      # Development mode flag for framework override
+      - DEV_MODE=${DEV_MODE:-false}
+      # Defaults from Dockerfile are HOST=0.0.0.0, PORT=8051, TRANSPORT=sse
+      - PORT={{services.pv_finder.port_container}} # Explicitly set container port
+      - HOST=0.0.0.0
+      - TRANSPORT=sse
+      - DEBUG=true
+      # ------------------
+      # MongoDB connection
+      - MONGO_HOST=mongo
+      # ------------------
+      # CBORG
+      - CBORG_API_KEY=${CBORG_API_KEY}
+      - CBORG_API_URL=${CBORG_API_URL}
+      # API KEYS
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      # SQUID proxy
+      - HTTPS_PROXY=${HTTPS_PROXY}
+      - https_proxy=${https_proxy}
+      - NO_PROXY=${NO_PROXY}
+      # Langfuse
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST}
+      - LANGFUSE_ENABLED=${LANGFUSE_ENABLED}
+    command: ["/bin/bash", "/pv_finder/start.sh"]
+
+    networks:
+      - osprey-network

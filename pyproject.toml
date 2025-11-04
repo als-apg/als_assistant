@@ -1,0 +1,46 @@
+[project]
+name = "als-assistant"
+version = "0.1.0"
+description = "ALS Assistant - Advanced Light Source Accelerator Assistant Application"
+requires-python = ">=3.11"
+
+dependencies = [
+    # Framework dependency (pip-installable v0.8.0+)
+    "osprey-framework>=0.8.1",
+    
+    # ALS-specific dependencies
+    "pyepics>=3.5.0",
+    "als-archiver-client>=1.0.3",
+    
+    # Database and storage
+    "pymongo",
+    
+    # NLP for PV finder
+    "nltk>=3.8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "black",
+    "ruff",
+]
+
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["als_assistant*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+

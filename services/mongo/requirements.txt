@@ -1,0 +1,5 @@
+# Framework dependency
+osprey-framework>=0.8.0
+
+scipy
+pymongo

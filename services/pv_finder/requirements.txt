@@ -1,0 +1,13 @@
+# Framework dependency
+osprey-framework>=0.8.0
+
+mcp-server>=0.1.0
+python-dotenv>=0.19.0
+logfire>=0.1.0
+pydantic>=1.9.0
+pydantic-ai
+pymongo
+ollama==0.5.1
+nltk
+nest_asyncio
+fastmcp

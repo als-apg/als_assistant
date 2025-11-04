@@ -1,0 +1,48 @@
+volumes:
+  mongo:
+
+services:
+  mongo:
+    container_name: {{services.mongo.name}}
+    image: docker.io/mongo:latest
+    restart: unless-stopped
+    ports:
+      - "{{services.mongo.port_host}}:{{services.mongo.port_container}}" 
+    environment:
+      - TZ=America/Los_Angeles
+      - NO_PROXY=${NO_PROXY}
+    volumes:
+      - mongo:/data/mongo
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:{{services.mongo.port_container}}/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - osprey-network
+
+  # DBs Initializer (ao and logbook)
+  db-init:
+    container_name: db-init
+    build:
+      context: ./mongo
+      dockerfile: Dockerfile.db-init
+    working_dir: /app
+    volumes:
+      - ./mongo/repo_src/:/repo_src
+      - ./mongo/config.yml:/config.yml:ro
+    environment:
+      - AO_DB_HOST={{services.mongo.name}}
+      - AO_DB_PORT={{services.mongo.port_host}}
+      - MONGO_HOST=mongo
+      - PYTHONPATH=/repo_src
+      - CONFIG_FILE=/config.yml
+      - TZ=America/Los_Angeles
+      - NO_PROXY=${NO_PROXY}
+      - DEV_MODE=${DEV_MODE:-false}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - osprey-network

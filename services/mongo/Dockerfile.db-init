@@ -1,0 +1,16 @@
+# Use a slim Python base image
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Copy initialization files
+COPY init_db.py .
+COPY start_init.sh .
+COPY requirements.txt .
+
+# Make startup script executable
+RUN chmod +x /app/start_init.sh
+
+# Set the default command to use the startup script
+CMD ["/bin/bash", "/app/start_init.sh"]
