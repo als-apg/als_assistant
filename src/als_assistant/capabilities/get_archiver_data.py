@@ -5,18 +5,13 @@ This capability retrieves historical Process Variable data from the ALS archiver
 It provides access to time-series data for analysis, plotting, and trend monitoring.
 """
 
-import asyncio
-import logging
 import pandas as pd
 import textwrap
-from typing import List, Dict, Any, Optional, Union
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, Any, Optional
 
 # Import from new clean architecture
 from osprey.base.decorators import capability_node
 from osprey.base.capability import BaseCapability
-from osprey.context.base import CapabilityContext
 from osprey.base.errors import ErrorClassification, ErrorSeverity
 from osprey.base.planning import PlannedStep
 from osprey.state import AgentState, StateManager
@@ -25,10 +20,11 @@ from osprey.registry import get_registry
 from osprey.context.context_manager import ContextManager
 
 from als_assistant.context_classes import ArchiverDataContext
-from archivertools import ArchiverClient
-from osprey.utils.config import get_model_config, get_config_value
 from osprey.utils.streaming import get_streamer
 from osprey.utils.logger import get_logger
+
+# Import connector abstraction (see osprey Issue #18)
+from osprey.connectors.factory import ConnectorFactory
 
 logger = get_logger("get_archiver_data")
 
@@ -60,110 +56,15 @@ class ArchiverSystemError(ArchiverError):
     """Raised when there are system-level archiver issues that indicate configuration or installation problems."""
     pass
 
-def download_archiver_data(
-    pv_list: Union[str, List[str]],
-    start_date: datetime,
-    end_date: datetime,
-    precision_ms: int = 1000,
-    archiver_url: str = None,
-    timeout: Optional[int] = None
-) -> pd.DataFrame:
-    """
-    Retrieves historical data for PVs from the ALS archiver.
-    This function is synchronous and can be used directly in Python scripts.
-
-    Args:
-        pv_list: A single PV address or a list of PV addresses to retrieve data for.
-        start_date: The start date/time as datetime object.
-        end_date: The end date/time as datetime object.
-        precision_ms: Data precision in milliseconds (default: 1000, which is 1 second).
-
-    Returns:
-        A pandas DataFrame containing the retrieved data.
-        
-    Raises:
-        ArchiverTimeoutError: If the archiver request times out
-        ArchiverConnectionError: If there are connectivity issues with the archiver
-        ArchiverDataError: For unexpected data formats
-        ArchiverError: For other archiver-related errors
-    """
-    if ArchiverClient is None:
-        raise ArchiverSystemError("ArchiverClient not available - please check installation")
-
-    # Validate that inputs are datetime objects
-    if not isinstance(start_date, datetime):
-        raise TypeError(f"start_date must be a datetime object, got {type(start_date)}")
-    if not isinstance(end_date, datetime):
-        raise TypeError(f"end_date must be a datetime object, got {type(end_date)}")
-
-    # Ensure pv_list is a list
-    if isinstance(pv_list, str):
-        pv_list = [pv_list]
-      
-    try:
-        # Initialize the archiver client
-        logger.debug(f"Initializing ArchiverClient with URL: {archiver_url!r} (type: {type(archiver_url)})")
-        try:
-            archiver = ArchiverClient(archiver_url=archiver_url)
-        except Exception as init_error:
-            # Convert any ArchiverClient initialization errors to our system error
-            raise ArchiverSystemError(f"ArchiverClient initialization failed: {init_error}")
-        
-        def fetch_data():
-            return archiver.match_data(
-                pv_list=pv_list,
-                precision=precision_ms,
-                start=start_date,
-                end=end_date,
-                verbose=0
-            )
-        
-        # Use ThreadPoolExecutor for timeout protection
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(fetch_data)
-            try:
-                data = future.result(timeout=timeout)
-                
-                # Ensure the index is in datetime format if data is a DataFrame
-                if isinstance(data, pd.DataFrame) and hasattr(data, 'index'):
-                    data.index = pd.to_datetime(data.index)
-
-                # Return the DataFrame directly
-                if isinstance(data, pd.DataFrame):
-                    return data
-                else:
-                    error_msg = f"Unexpected data format: {type(data)}"
-                    raise ArchiverDataError(error_msg)
-                    
-            except TimeoutError:
-                error_msg = "Request to archiver timed out. Please check if the archiver service is accessible."
-                raise ArchiverTimeoutError(error_msg)
-                
-    except Exception as e:
-        error_msg = str(e)
-        
-        # Check for connection refused errors which typically indicate SSH tunnel issues
-        if "connection refused" in error_msg.lower() or "errno 61" in error_msg.lower():
-            user_friendly_msg = "Cannot connect to the ALS archiver. Please make sure the SSH tunnel is open (port 8443). To open the tunnel, run: ssh -L 8443:pscaa02.pcds:8443 <username>@als.lbl.gov"
-            raise ArchiverConnectionError(user_friendly_msg)
-        
-        # Check for other connectivity issues
-        elif "connectionpool" in error_msg.lower() or "connection" in error_msg.lower():
-            user_friendly_msg = "Network connectivity issue with the ALS archiver. This may be due to:\n1. SSH tunnel not being established\n2. VPN not being connected\n3. Network connectivity issues\nPlease check your connection and try again."
-            raise ArchiverConnectionError(user_friendly_msg)
-        
-        # For other errors
-        raise ArchiverError(f"Error accessing archiver data: {error_msg}")
-
 
 def convert_dataframe_to_archiver_dict(df: pd.DataFrame, precision_ms: int) -> Dict[str, Any]:
     """
     Convert pandas DataFrame from archiver to simplified dictionary format.
-    
+
     Args:
         df: pandas DataFrame with datetime index and PV columns
         precision_ms: The precision in milliseconds used for data retrieval
-        
+
     Returns:
         Dictionary with timestamps as datetime objects, precision_ms, time_series_data, and available_pvs
     """
@@ -175,29 +76,29 @@ def convert_dataframe_to_archiver_dict(df: pd.DataFrame, precision_ms: int) -> D
                 "time_series_data": {},
                 "available_pvs": []
             }
-        
+
         # Keep timestamps as datetime objects - no conversion to strings!
         timestamps = df.index.to_pydatetime().tolist()  # Convert pandas datetime index to Python datetime objects
-        
+
         # Convert PV data to dictionary of lists, handling NaN values
         time_series_data = {}
         for col in df.columns:
             # Convert to list, replacing NaN with None (which will be serializable)
             values = df[col].fillna(0.0).tolist()  # Fill NaN with 0.0 for simplicity
             time_series_data[col] = values
-        
+
         # Create list of available PV names for intuitive access
         available_pvs = list(df.columns)
-        
+
         result = {
             "timestamps": timestamps,
             "precision_ms": precision_ms,
             "time_series_data": time_series_data,
             "available_pvs": available_pvs
         }
-        
+
         return result
-        
+
     except Exception as e:
         raise ArchiverDataError(f"Error converting DataFrame to archiver format: {str(e)}")
 
@@ -210,19 +111,19 @@ def convert_dataframe_to_archiver_dict(df: pd.DataFrame, precision_ms: int) -> D
 class ArchiverDataCapability(BaseCapability):
     """
     Archiver Data Capability - LangGraph-Native with Full Business Logic
-    
+
     - Complete archiver client integration with sophisticated error handling
-    - Comprehensive validation and timeout protection  
+    - Comprehensive validation and timeout protection
     - Registry-based patterns for context types and capability names
     - Rich orchestrator examples and classifier configuration
     """
-    
+
     # Required metadata (loaded through registry configuration)
     name = "get_archiver_data"
     description = "Retrieve historical Process Variable data from the ALS archiver"
     provides = ["ARCHIVER_DATA"]
     requires = ["PV_ADDRESSES", "TIME_RANGE"]
-    
+
     @staticmethod
     async def execute(
         state: AgentState,
@@ -230,22 +131,22 @@ class ArchiverDataCapability(BaseCapability):
     ) -> Dict[str, Any]:
         """
         Main archiver data retrieval logic.
-        
+
         Pure business logic enhanced by @capability_node decorator for infrastructure.
         """
-        
+
         # Extract current step from execution plan (single source of truth)
         step = StateManager.get_current_step(state)
 
         # Define streaming helper here for step awareness
         streamer = get_streamer("get_archiver_data", state)
-        
+
         # Initialize context manager
         context_manager = ContextManager(state)
-        
+
         logger.info(f"Starting archiver data retrieval: {step.get('task_objective', 'unknown')}")
         streamer.status("Initializing archiver data retrieval...")
-        
+
         try:
             try:
                 contexts = context_manager.extract_from_step(
@@ -255,43 +156,58 @@ class ArchiverDataCapability(BaseCapability):
                 )
                 pv_finder_context = contexts[registry.context_types.PV_ADDRESSES]
                 time_range_context = contexts[registry.context_types.TIME_RANGE]
-                logger.info(f"Successfully extracted both required contexts: PV_ADDRESSES and TIME_RANGE")
+                logger.info("Successfully extracted both required contexts: PV_ADDRESSES and TIME_RANGE")
             except ValueError as e:
                 raise ArchiverDependencyError(str(e))
-            
+
             # Validate that we have PV addresses to work with
             if not pv_finder_context.pvs or len(pv_finder_context.pvs) == 0:
                 raise ArchiverDependencyError("No PV addresses available for archiver data retrieval. The PV address finding step may have failed to locate suitable PVs.")
-            
+
             streamer.status(f"Found {len(pv_finder_context.pvs)} PVs and time range, retrieving data...")
-            
+
             # Get precision from step parameters (with fallback to default)
             precision_ms = (step.get('parameters') or {}).get('precision_ms', 1000)
-            
-            # Get archiver URL from unified config system
-            archiver_url = get_config_value('external_services.archiver.url')
-            
+
             logger.debug(f"Retrieving archiver data for {len(pv_finder_context.pvs)} PVs from {time_range_context.start_date} to {time_range_context.end_date}")
-            
-            # Download the data asynchronously
-            archiver_dataframe = await asyncio.to_thread(
-                download_archiver_data,
-                pv_list=pv_finder_context.pvs,
-                start_date=time_range_context.start_date,
-                end_date=time_range_context.end_date,
-                precision_ms=precision_ms,
-                archiver_url=archiver_url
-            )
-            
+
+            # Create archiver connector from configuration (replaces direct ArchiverClient usage)
+            connector = await ConnectorFactory.create_archiver_connector()
+
+            try:
+                # Download the data using connector API (replaces ArchiverClient.match_data())
+                archiver_dataframe = await connector.get_data(
+                    pv_list=pv_finder_context.pvs,
+                    start_date=time_range_context.start_date,
+                    end_date=time_range_context.end_date,
+                    precision_ms=precision_ms
+                )
+            except TimeoutError:
+                raise ArchiverTimeoutError("Request to archiver timed out. Please check if the archiver service is accessible.")
+            except ConnectionError as e:
+                error_msg = str(e).lower()
+                if "connection refused" in error_msg or "tunnel" in error_msg:
+                    raise ArchiverConnectionError("Cannot connect to the archiver. Please check network connectivity and SSH tunnels (if required).")
+                else:
+                    raise ArchiverConnectionError(f"Network connectivity issue with archiver: {e}")
+            except Exception as e:
+                # Let specific errors pass through
+                if isinstance(e, (ArchiverTimeoutError, ArchiverConnectionError, ArchiverDataError, ArchiverSystemError)):
+                    raise
+                raise ArchiverError(f"Error accessing archiver data: {str(e)}")
+            finally:
+                # Always disconnect connector
+                await connector.disconnect()
+
             streamer.status("Converting archiver data to structured format...")
-            
+
             # Convert DataFrame to simplified dictionary format
             archiver_data = convert_dataframe_to_archiver_dict(archiver_dataframe, precision_ms)
-            
+
             logger.debug(f"Retrieved archiver data with {len(archiver_data['timestamps'])} timestamps and {len(archiver_data['available_pvs'])} PVs")
-            
+
             streamer.status("Creating archiver data context...")
-            
+
             # Create rich context object
             archiver_context = ArchiverDataContext(
                 timestamps=archiver_data["timestamps"],
@@ -299,35 +215,35 @@ class ArchiverDataCapability(BaseCapability):
                 time_series_data=archiver_data["time_series_data"],
                 available_pvs=archiver_data["available_pvs"]
             )
-            
+
             # Log archiver data info with safe timestamp access
             start_time = archiver_context.timestamps[0] if archiver_context.timestamps else 'N/A'
             end_time = archiver_context.timestamps[-1] if archiver_context.timestamps else 'N/A'
             logger.info(f"Retrieved archiver data: {len(archiver_context.timestamps)} points for {len(archiver_context.available_pvs)} PVs from {start_time} to {end_time}")
-            
+
             # Store context using StateManager
             state_updates = StateManager.store_context(
-                state, 
-                registry.context_types.ARCHIVER_DATA, 
-                step.get("context_key"), 
+                state,
+                registry.context_types.ARCHIVER_DATA,
+                step.get("context_key"),
                 archiver_context
             )
-            
-            
+
+
             # Return state updates (LangGraph will merge automatically)
             return state_updates
-            
+
         except Exception as e:
             logger.error(f"Archiver data retrieval failed: {e}")
             streamer.error(f"Archiver data retrieval failed: {str(e)}")
             raise
-    
+
     @staticmethod
     def classify_error(exc: Exception, context: dict) -> ErrorClassification:
         """
         Domain-specific error classification with detailed recovery suggestions.
         """
-        
+
         if isinstance(exc, ArchiverTimeoutError):
             return ErrorClassification(
                 severity=ErrorSeverity.RETRIABLE,
@@ -425,10 +341,10 @@ class ArchiverDataCapability(BaseCapability):
                 user_message=f"Archiver data retrieval failed: {exc}",
                 metadata={"technical_details": str(exc)}
             )
-    
+
     def _create_orchestrator_guide(self) -> Optional[OrchestratorGuide]:
         """Create prompt snippet for archiver data capability."""
-        
+
         # Define structured examples using simplified dict format
         standard_example = OrchestratorExample(
             step=PlannedStep(
@@ -445,7 +361,7 @@ class ArchiverDataCapability(BaseCapability):
             scenario_description="Standard historical data retrieval for plotting or analysis",
             notes=f"Requires PV addresses and time range inputs. Output stored under {registry.context_types.ARCHIVER_DATA} context type."
         )
-        
+
         high_resolution_example = OrchestratorExample(
             step=PlannedStep(
                 context_key="high_res_magnet_data",
@@ -462,7 +378,7 @@ class ArchiverDataCapability(BaseCapability):
             scenario_description="High-resolution data retrieval for detailed analysis of short term events",
             notes="Use precision_ms=100 for 0.1-second resolution, 1000 for standard 1-second, 10000 for 10-second averaging."
         )
-        
+
         long_term_example = OrchestratorExample(
             step=PlannedStep(
                 context_key="power_supply_trend_data",
@@ -479,7 +395,7 @@ class ArchiverDataCapability(BaseCapability):
             scenario_description="Long-term trend analysis over days/weeks with reduced data volume",
             notes="Use higher precision_ms values for long time ranges to reduce data volume and processing time."
         )
-        
+
         return OrchestratorGuide(
             instructions=textwrap.dedent(f"""
                 **When to plan "get_archiver_data" steps:**
@@ -491,59 +407,59 @@ class ArchiverDataCapability(BaseCapability):
                 - context_key: Unique identifier for output (e.g., "historical_data", "trend_data")
                 - inputs: Specify required inputs:
                 {{"{registry.context_types.PV_ADDRESSES}": "context_key_with_pv_data", "{registry.context_types.TIME_RANGE}": "context_key_with_time_range"}}
-                
+
                 **Required Inputs:**
                 - {registry.context_types.PV_ADDRESSES} data: typically from a "{registry.capability_names.PV_ADDRESS_FINDING}" step
                 - {registry.context_types.TIME_RANGE} data: typically from a "{registry.capability_names.TIME_RANGE_PARSING}" step
-                
+
                 **Optional Parameters (specify in step.parameters):**
                 - precision_ms (int): Data sampling interval in milliseconds (default: 1000)
                 * Use 1000 for 1-second precision (standard)
                 * Use 100 for 0.1-second precision (high resolution)
                 * Use 10000 for 10-second precision (long-term trends)
-                
+
                 **Input flow and sequencing:**
                 1. "{registry.capability_names.PV_ADDRESS_FINDING}" step must precede this step (if {registry.context_types.PV_ADDRESSES} data is not present already)
                 2. "{registry.capability_names.TIME_RANGE_PARSING}" step must precede this step (if {registry.context_types.TIME_RANGE} data is not present already)
-                
+
                 **Output: {registry.context_types.ARCHIVER_DATA}**
                 - Contains: Structured historical data from the ALS archiver
                 - Available to downstream steps via context system
-                
+
                 Do NOT plan this for current PV values; use "pv_value_retrieval" for real-time data.
                 """),
             examples=[standard_example, high_resolution_example, long_term_example],
             priority=15
         )
-    
+
     def _create_classifier_guide(self) -> Optional[TaskClassifierGuide]:
         """Create classifier for archiver data capability."""
         return TaskClassifierGuide(
             instructions="Determines if the task requires accessing the PV data archiver. This is relevant for requests involving historical data, trends from the control system.",
             examples=[
                 ClassifierExample(
-                    query="Which tools do you have?", 
-                    result=False, 
+                    query="Which tools do you have?",
+                    result=False,
                     reason="This is a question about the AI's capabilities."
                 ),
                 ClassifierExample(
-                    query="Plot the historical data for vacuum pressure in Sector 4 for the last week.", 
-                    result=True, 
+                    query="Plot the historical data for vacuum pressure in Sector 4 for the last week.",
+                    result=True,
                     reason="The query explicitly asks for historical data plotting, which requires archiver access."
                 ),
                 ClassifierExample(
-                    query="What is the current beam energy?", 
-                    result=False, 
+                    query="What is the current beam energy?",
+                    result=False,
                     reason="The query asks for a current value, not historical data."
                 ),
                 ClassifierExample(
-                    query="Can you plot that over the last 4h?", 
-                    result=True, 
+                    query="Can you plot that over the last 4h?",
+                    result=True,
                     reason="The query asks for historical data plotting."
                 ),
                 ClassifierExample(
-                    query="What was that value yesterday?", 
-                    result=True, 
+                    query="What was that value yesterday?",
+                    result=True,
                     reason="The query asks for historical data."
                 ),
             ],
