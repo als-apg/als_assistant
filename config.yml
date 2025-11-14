@@ -23,7 +23,7 @@ deployed_services:
   - jupyter
   - open_webui
   - pipelines
-  
+
   # ALS Assistant services
   - mongo
   - pv_finder
@@ -103,6 +103,8 @@ models:
 # SERVICE CONFIGURATION
 # ============================================================
 # Framework services (3 required) + ALS Assistant services (custom names)
+
+container_runtime: podman
 
 services:
   # Framework Services (RESERVED names)
@@ -191,12 +193,12 @@ execution_control:
   # EPICS writes (hardware control) - Master safety switch
   epics:
     writes_enabled: false    # Set true only for production hardware control
-  
+
   # Agent control
   agent_control:
     task_extraction_bypass_enabled: false
     capability_selection_bypass_enabled: false
-  
+
   # Safety limits
   limits:
     max_reclassifications: 1
@@ -205,7 +207,7 @@ execution_control:
     max_execution_time_seconds: 3000
     graph_recursion_limit: 100
     max_concurrent_classifications: 5
-    
+
 # ============================================================
 # SYSTEM CONFIGURATION
 # ============================================================
@@ -233,7 +235,7 @@ file_paths:
 execution:
   execution_method: "local"              # Options: local | container
   python_env_path: ${LOCAL_PYTHON_VENV}  # Path to Python with dependencies
-  
+
   # EPICS infrastructure (for hardware control applications)
   epics:
     timeout: 5.0
@@ -244,7 +246,7 @@ execution:
       write_access:
         address: cagw-alsdmz.als.lbl.gov
         port: 5084
-  
+
   # Execution modes
   modes:
     read_only:
@@ -268,6 +270,90 @@ python_executor:
   max_generation_retries: 3
   max_execution_retries: 3
   execution_timeout_seconds: 600
+
+# ============================================================
+# CONTROL SYSTEM & ARCHIVER CONNECTORS (Issue #18)
+# ============================================================
+# Unified connector abstraction for control systems and archivers
+# Enables easy switching between tutorial (mock) and production modes
+
+control_system:
+  # Control system type: 'epics' (production) or 'mock' (tutorial)
+  type: epics
+
+  # Pattern detection for approval system
+  patterns:
+    epics:
+      write:
+        - 'epics\.caput\('
+        - 'epics\.PV\([^)]*\)\.put\('
+        - '\.put\('
+      read:
+        - 'epics\.caget\('
+        - 'epics\.PV\([^)]*\)\.get\('
+        - '\.get\('
+    mock:
+      write:
+        - '\.caput\('
+        - '\.write_pv\('
+      read:
+        - '\.caget\('
+        - '\.read_pv\('
+
+  # Runtime connector configuration
+  connector:
+    # EPICS connector (production)
+    #
+    # Two connection modes:
+    #
+    # 1. Direct gateway (on-site):
+    #    - Set use_name_server: false
+    #    - Uses EPICS_CA_ADDR_LIST for gateway address
+    #    - Works with standard EPICS Channel Access broadcasts
+    #
+    # 2. SSH tunnel (remote):
+    #    - Set use_name_server: true
+    #    - Uses EPICS_CA_NAME_SERVERS for TCP-based connection
+    #    - Set environment variables in .env:
+    #        EPICS_CA_GATEWAY_HOST=localhost
+    #        EPICS_CA_GATEWAY_PORT=5074
+    #    - Change use_name_server below to: true
+    #
+    epics:
+      timeout: 5.0
+      gateways:
+        read_only:
+          address: ${EPICS_CA_GATEWAY_HOST:-cagw-alsdmz.als.lbl.gov}
+          port: ${EPICS_CA_GATEWAY_PORT:-5064}
+          use_name_server: true  # Change to true for SSH tunnel
+        write_access:
+          address: ${EPICS_CA_GATEWAY_HOST:-cagw-alsdmz.als.lbl.gov}
+          port: ${EPICS_CA_GATEWAY_WRITE_PORT:-5084}
+          use_name_server: true  # Change to true for SSH tunnel
+
+    # Mock connector (tutorial mode)
+    mock:
+      response_delay_ms: 10
+      noise_level: 0.01
+      enable_writes: true
+
+archiver:
+  # Archiver type: 'epics_archiver' (production) or 'mock_archiver' (tutorial)
+  type: epics_archiver
+
+  # EPICS Archiver Appliance (production)
+  epics_archiver:
+    url: https://controls-web.als.lbl.gov
+    timeout: 60
+
+  # Mock archiver (tutorial mode)
+  mock_archiver:
+    sample_rate_hz: 1.0
+    noise_level: 0.01
+
+# Note: The old execution.epics and external_services.archiver configurations
+# are maintained above for backward compatibility. New connector abstraction
+# takes precedence when available.
 
 # ============================================================
 # APPLICATION METADATA
@@ -299,7 +385,7 @@ logging:
   rich_tracebacks: true
   show_traceback_locals: false
   show_full_paths: false
-  
+
   # Component colors (for terminal output)
   logging_colors:
     # Core framework components
@@ -313,31 +399,31 @@ logging:
     error: "red"
     gateway: "light_salmon1"
     approval: "light_salmon1"
-    
+
     # Framework capabilities
     time_range_parsing: "dodger_blue1"
     memory: "light_salmon1"
     python: "light_salmon1"
-    
+
     # Communication capabilities
     respond: "thistle1"
     clarify: "thistle1"
     message_generator: "thistle1"
-    
+
     # Execution infrastructure
     python_generator: "sandy_brown"
     python_analyzer: "salmon1"
     python_executor: "misty_rose1"
     python_workflow: "light_steel_blue1"
     python_services: "light_steel_blue1"
-    
+
     # Interface components
     cli: "deep_sky_blue1"
     pipeline: "deep_sky_blue1"
-    
+
     # ALS Assistant pipeline
     als_assistant_pipeline: 'white'
-    
+
     # ALS Assistant capabilities
     data_analysis: "deep_sky_blue1"
     data_visualization: "dark_turquoise"
@@ -389,7 +475,7 @@ external_services:
   # ALS Archiver Service
   archiver:
     url: https://controls-web.als.lbl.gov
-  
+
   # Phoebus Launcher Configuration
   phoebus:
     executable_path: ${PATH_TO_PHOEBUS_EXECUTABLE}
