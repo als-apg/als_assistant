@@ -18,6 +18,8 @@ services:
       - NOTEBOOK_DIR=/home/jovyan/work
       - JUPYTER_ENABLE_LAB=yes
       - PYTHONPATH=/jupyter/repo_src
+      # Development mode flag for local osprey override
+      - DEV_MODE=${DEV_MODE:-false}
       # Point to config.yml for framework initialization (required by new config system)
       - CONFIG_FILE=/jupyter/config.yml
       # Timezone synchronization with host (from system configuration)
@@ -51,6 +53,8 @@ services:
       - NOTEBOOK_DIR=/home/jovyan/work
       - JUPYTER_ENABLE_LAB=yes
       - PYTHONPATH=/jupyter/repo_src
+      # Development mode flag for local osprey override
+      - DEV_MODE=${DEV_MODE:-false}
       # Point to config.yml for framework initialization (required by new config system)
       - CONFIG_FILE=/jupyter/config.yml
       # Timezone synchronization with host (from system configuration)
