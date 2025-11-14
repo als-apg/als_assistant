@@ -17,14 +17,14 @@ else
 fi
 
 # Development mode - override framework with local version
-if [ "$DEV_MODE" = "true" ] && [ -d "/app/framework_override" ]; then
+if [ "$DEV_MODE" = "true" ] && [ -d "/app/osprey_override" ]; then
     echo "==============================================================="
     echo "🔧 Development mode: Overriding framework with local version..."
     echo "==============================================================="
-     
+
     # Create symlink to override the installed framework
     # The PYTHONPATH order ensures our local version is found first
-    ln -sf /app/framework_override /app/framework
+    ln -sf /app/osprey_override /app/framework
     export PYTHONPATH="/app:${PYTHONPATH}"
     echo "✓ Local framework will be used (via PYTHONPATH)"
 fi

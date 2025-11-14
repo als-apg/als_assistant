@@ -7,14 +7,14 @@ echo "Starting PV Finder MCP Server"
 echo "=============================================="
 
 # Development mode - override framework with local version
-if [ "$DEV_MODE" = "true" ] && [ -d "/pv_finder/framework_override" ]; then
+if [ "$DEV_MODE" = "true" ] && [ -d "/pv_finder/osprey_override" ]; then
     echo "==============================================================="
     echo "🔧 Development mode: Overriding framework with local version..."
     echo "==============================================================="
-     
+
     # Create symlink to override the installed framework
     # The PYTHONPATH order ensures our local version is found first
-    ln -sf /pv_finder/framework_override /pv_finder/framework
+    ln -sf /pv_finder/osprey_override /pv_finder/framework
     export PYTHONPATH="/pv_finder:${PYTHONPATH}"
     echo "✓ Local framework will be used (via PYTHONPATH)"
 else

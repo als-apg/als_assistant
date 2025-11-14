@@ -17,26 +17,26 @@ else
     pip install osprey-framework>=0.8.0
 fi
 
-# Development mode override - install local framework AFTER everything else
-if [ "$DEV_MODE" = "true" ] && [ -d "/pipelines/framework_override" ]; then
-    echo "🔧 Development mode: Overriding framework with local version..."
-    
+# Development mode override - install local osprey AFTER everything else
+if [ "$DEV_MODE" = "true" ] && [ -d "/pipelines/osprey_override" ]; then
+    echo "🔧 Development mode: Overriding osprey with local version..."
+
     # Create a temporary setup.py for the override
-    cat > /pipelines/framework_override/setup.py << 'EOF'
+    cat > /pipelines/osprey_override/setup.py << 'EOF'
 from setuptools import setup, find_packages
 setup(
-    name="framework",
+    name="osprey",
     version="dev-override",
     packages=find_packages(),
     install_requires=[],  # Dependencies already installed from requirements.txt
 )
 EOF
-    
-    # Install the local framework (this will override the PyPI version)
-    pip install --no-cache-dir -e /pipelines/framework_override
-    echo "✓ Framework overridden with local development version"
+
+    # Install the local osprey (this will override the PyPI version)
+    pip install --no-cache-dir -e /pipelines/osprey_override
+    echo "✓ Osprey overridden with local development version"
 else
-    echo "📦 Using PyPI framework version"
+    echo "📦 Using PyPI osprey version"
 fi
 
 # Verify pipeline interface files exist
