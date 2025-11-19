@@ -25,7 +25,7 @@ from .tools import list_systems, list_families, list_common_names, inspect_field
 from .core import (
     QuerySplitterOutput,
     KeywordExtractorOutput,
-    PVQueryOutput, 
+    PVQueryOutput,
     PVSearchResult,
     QueryAgentDeps,
     PVFinderGraphState
@@ -49,8 +49,8 @@ logger = get_logger("pv_finder")
 
 async def _get_query_splitter_response(query: str) -> QuerySplitterOutput:
     """Split query using structured LLM generation."""
-    query_splitter_config = get_model_config("als_assistant", "pv_finder", "query_splitter")
-    
+    query_splitter_config = get_model_config("pv_finder_query_splitter")
+
     response = await asyncio.to_thread(
         get_chat_completion,
         message=f"{get_query_splitter_prompt()}\n\nQuery to process: {query}",
@@ -61,8 +61,8 @@ async def _get_query_splitter_response(query: str) -> QuerySplitterOutput:
 
 async def _get_keyword_extractor_response(query: str) -> KeywordExtractorOutput:
     """Extract keywords using structured LLM generation."""
-    keyword_extractor_config = get_model_config("als_assistant", "pv_finder", "keyword")
-    
+    keyword_extractor_config = get_model_config("pv_finder_keyword")
+
     response = await asyncio.to_thread(
         get_chat_completion,
         message=f"{get_keyword_extractor_prompt()}\n\nQuery to process: {query}",
@@ -78,7 +78,7 @@ def _get_pv_query_agent():
     """Get or create the PV query agent (lazy initialization)."""
     global _pv_query_agent
     if _pv_query_agent is None:
-        pv_query_config = get_model_config("als_assistant", "pv_finder", "pv_query")
+        pv_query_config = get_model_config("pv_finder_pv_query")
         retries = pv_query_config.get("retries", 3)
         _pv_query_agent = Agent(
             name="[Agent]: PV Query",
@@ -97,16 +97,16 @@ def _get_pv_query_agent():
             retries=retries,
             instrument=langfuse_enabled,
         )
-        
+
         # Register decorators after agent creation
         @_pv_query_agent.system_prompt
         async def get_dynamic_system_prompt(ctx: RunContext[QueryAgentDeps]) -> str:
             return await _get_dynamic_system_prompt_impl(ctx)
-        
+
         @_pv_query_agent.output_validator
         async def validate_pvs(ctx: RunContext[QueryAgentDeps], output: PVQueryOutput) -> PVQueryOutput:
             return await _validate_pvs_impl(ctx, output)
-    
+
     return _pv_query_agent
 
 # --- Dynamic System Prompts Implementation ---
@@ -117,14 +117,14 @@ async def _get_dynamic_system_prompt_impl(ctx: RunContext[QueryAgentDeps]) -> st
 
     logger.debug(f"Systems: {', '.join(systems) if systems else 'none'}")
     logger.debug(f"Keywords: {', '.join(keywords) if keywords else 'none'}")
-    
+
     # Use the new prompt builder with dynamic examples
     system_prompt = get_pv_query_prompt(
         keywords=keywords,
         systems=systems,
         max_examples=20
     )
-    
+
     return system_prompt
 
 
@@ -154,7 +154,7 @@ class QuerySplittingNode(BaseNode[PVFinderGraphState]):
         # --- MAIN LOGIC ---
         result = await _get_query_splitter_response(ctx.state.initial_query)
         ctx.state.split_queries = result.queries
-        
+
         logger.key_info(f"Split queries: {ctx.state.split_queries}")
         span.set_attribute("output", ctx.state.split_queries)
         return ParallelQueryProcessingNode()
@@ -164,13 +164,13 @@ class ParallelQueryProcessingNode(BaseNode[PVFinderGraphState]):
     @classmethod
     def get_node_id(cls):
         return f"[NODE]: Query Processing"
-    
+
     async def _process_query_unit_async(self, query_string: str) -> PVQueryOutput:
-        
+
         keyword_result = await _get_keyword_extractor_response(
             f"Extract keywords and relevant system components from the following query: {query_string}"
         )
-        
+
         extracted_keywords = keyword_result.keywords if keyword_result.keywords is not None else []
         extracted_systems = keyword_result.systems if keyword_result.systems is not None else []
 
@@ -181,18 +181,18 @@ class ParallelQueryProcessingNode(BaseNode[PVFinderGraphState]):
             keywords=extracted_keywords,
             systems=extracted_systems,
         )
-        
+
         # Get agent lazily to avoid registry access at module import time
         pv_result = await _get_pv_query_agent().run(
             query_string,
             deps=current_query_agent_deps
         )
-        
-        pvs = pv_result.output.pvs 
+
+        pvs = pv_result.output.pvs
         description = pv_result.output.description
-                
+
         return PVQueryOutput(
-            pvs=pvs, 
+            pvs=pvs,
             description=description
         )
 
@@ -208,7 +208,7 @@ class ParallelQueryProcessingNode(BaseNode[PVFinderGraphState]):
         ]
         results = await asyncio.gather(*tasks)
         ctx.state.pv_results = results
-        
+
         # Logging
         logger.key_info(f"Parallel processing completed for {len(ctx.state.pv_results)} queries")
         span.set_attribute("output", format_pv_results_for_span(ctx.state.pv_results))
@@ -234,13 +234,13 @@ class AggregationAndFinalResponseNode(BaseNode[PVFinderGraphState]):
                         if cleaned_pv not in seen_pvs:
                             unique_final_pvs.append(cleaned_pv)
                             seen_pvs.add(cleaned_pv)
-                if result_item.description: 
+                if result_item.description:
                     final_description_parts.append(result_item.description)
-        
+
         final_description = "\n\n".join(final_description_parts)
-        
+
         response = PVSearchResult(pvs=unique_final_pvs, description=final_description)
-        
+
         logger.success(f"Final aggregated response: Found {len(response.pvs)} PVs")
         span.set_attribute("output", response.pvs if response.pvs else response.description)
         return End(response)
@@ -250,8 +250,8 @@ class AggregationAndFinalResponseNode(BaseNode[PVFinderGraphState]):
 pv_finder_graph = Graph(
     name="[Graph]: PV Finder",
     nodes=(
-        QuerySplittingNode, 
-        ParallelQueryProcessingNode, 
+        QuerySplittingNode,
+        ParallelQueryProcessingNode,
         AggregationAndFinalResponseNode
         ),
     state_type=PVFinderGraphState
@@ -263,22 +263,22 @@ async def run_pv_finder_graph(user_query: str) -> PVSearchResult:
 
     Args:
         query: The user's query about the ALS control system
-        
+
     Returns:
         The response from the PV finder that includes the PV address
     """
-    
+
     with tracer.start_as_current_span("PV Finder", attributes={"input": user_query}) as span:
-        
+
         initial_state = PVFinderGraphState(initial_query=user_query)
         graph_run_result = await pv_finder_graph.run(
             QuerySplittingNode(),
             state=initial_state
-        ) 
+        )
         final_response_obj = graph_run_result.output
-        
+
         span.set_attribute("output", final_response_obj.pvs if final_response_obj.pvs else final_response_obj.description)
-        
+
         return final_response_obj
 
 
@@ -287,7 +287,7 @@ async def _example_usage():
     """Example function for testing during development."""
     initialize_nltk_resources()
     test_query = "What is the beam current PV?"
-    
+
     try:
         final_result = await run_pv_finder_graph(test_query)
         logger.success(f"Example result: Found {len(final_result.pvs)} PVs")

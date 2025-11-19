@@ -84,20 +84,19 @@ models:
     model_id: google/gemini-flash
     max_tokens: 4096
 
-  # Nested ALS Assistant models
-  pv_finder:
-    keyword:
-      provider: cborg
-      model_id: google/gemini-flash
-      max_tokens: 4096
-    query_splitter:
-      provider: cborg
-      model_id: google/gemini-flash
-      max_tokens: 4096
-    pv_query:
-      provider: cborg
-      model_id: google/gemini-flash
-      max_tokens: 4096
+  # PV Finder models (flattened for v0.9.1+ compatibility)
+  pv_finder_keyword:
+    provider: cborg
+    model_id: google/gemini-flash
+    max_tokens: 4096
+  pv_finder_query_splitter:
+    provider: cborg
+    model_id: google/gemini-flash
+    max_tokens: 4096
+  pv_finder_pv_query:
+    provider: cborg
+    model_id: google/gemini-flash
+    max_tokens: 4096
 
 # ============================================================
 # SERVICE CONFIGURATION

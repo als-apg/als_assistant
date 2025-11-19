@@ -6,15 +6,15 @@ requires-python = ">=3.11"
 
 dependencies = [
     # Framework dependency (pip-installable v0.8.0+)
-    "osprey-framework>=0.8.1",
-    
+    "osprey-framework>=0.9.1",
+
     # ALS-specific dependencies
     "pyepics>=3.5.0",
     "als-archiver-client>=1.0.3",
-    
+
     # Database and storage
     "pymongo",
-    
+
     # NLP for PV finder
     "nltk>=3.8.1",
 ]

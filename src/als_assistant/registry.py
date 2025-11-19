@@ -7,7 +7,7 @@ All ALS-specific capabilities, context classes, and data sources are declared he
 from osprey.registry import (
     extend_framework_registry,
     CapabilityRegistration,
-    ContextClassRegistration, 
+    ContextClassRegistration,
     DataSourceRegistration,
     FrameworkPromptProviderRegistration,
     RegistryConfig,
@@ -16,15 +16,15 @@ from osprey.registry import (
 
 class ALSExpertRegistryProvider(RegistryConfigProvider):
     """Registry provider for ALS Assistant application."""
-    
+
     def get_registry_config(self) -> RegistryConfig:
         """Get ALS Assistant v2 application registry configuration.
-        
+
         Returns:
             RegistryConfig: Registry configuration for ALS Assistant v2 application
         """
         return extend_framework_registry(
-        
+
         # ALS Assistant capabilities
         capabilities=[
             CapabilityRegistration(
@@ -128,11 +128,11 @@ class ALSExpertRegistryProvider(RegistryConfigProvider):
                 class_name="LauncherResultsContext"
             )
         ],
-        
+
         # ============================================================
         # Optional fields - only specify if different from defaults
         # ============================================================
-        
+
         data_sources=[
             DataSourceRegistration(
                 name="experiment_database",
@@ -142,7 +142,7 @@ class ALSExpertRegistryProvider(RegistryConfigProvider):
                 health_check_required=True
             )
         ],
-        
+
         framework_prompt_providers=[
             FrameworkPromptProviderRegistration(
                 application_name="als_assistant",
@@ -150,7 +150,7 @@ class ALSExpertRegistryProvider(RegistryConfigProvider):
                 description="ALS-specific framework prompt provider for all infrastructure prompts",
                 prompt_builders={
                     "orchestrator": "ALSOrchestratorPromptBuilder",
-                    "task_extraction": "ALSTaskExtractionPromptBuilder", 
+                    "task_extraction": "ALSTaskExtractionPromptBuilder",
                     "response_generation": "ALSResponseGenerationPromptBuilder",
                     "classification": "ALSClassificationPromptBuilder",
                     "error_analysis": "ALSErrorAnalysisPromptBuilder",
@@ -159,7 +159,7 @@ class ALSExpertRegistryProvider(RegistryConfigProvider):
                 }
             )
         ],
-        
+
         # Exclude framework components that conflict with specialized implementations
         exclude_capabilities=["python"]  # Use specialized data_analysis instead
         )
