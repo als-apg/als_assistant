@@ -16,15 +16,35 @@ The ALS Assistant is a specialized agentic application for the Advanced Light So
 - **Live Monitoring**: Launch Phoebus Data Browser for real-time PV monitoring
 - **Custom Knowledge Base**: ALS-specific knowledge including AO database, experiment database
 
+## Installation
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd als_assistant
+
+# Create and activate a virtual environment
+python3.11 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install the package in editable mode with dependencies
+pip install -e .
+
+# Optional: Install development dependencies
+pip install -e ".[dev]"
+
+# Setup environment configuration
+cp .env.example .env
+# Edit .env with your API keys and configuration
+```
+
 ## Quick Start
 
 ```bash
-# Setup environment
-cp .env.example .env
-# Edit .env with your API keys and configuration
+# Activate virtual environment (if not already active)
+source venv/bin/activate
 
 # Start services
-cd /home/als3/acct/thellert/projects/als_assistant
 osprey deploy up
 
 # Run CLI interface
@@ -80,10 +100,11 @@ Edit files in `src/als_assistant/` to add functionality. Changes are reflected i
 ## Requirements
 
 - Python >=3.11
-- Framework dependencies (osprey-framework)
-- EPICS (pyepics) for accelerator control
-- MongoDB for databases
-- API keys for AI models (CBORG, OpenAI, etc.)
+- API keys for AI models (CBORG, OpenAI, Anthropic, etc.)
+- MongoDB (started via `osprey deploy up`)
+- EPICS channel access gateway (for accelerator control)
+
+All Python dependencies are automatically installed via `pip install -e .`
 
 ## Configuration
 

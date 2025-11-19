@@ -5,7 +5,7 @@ description = "ALS Assistant - Advanced Light Source Accelerator Assistant Appli
 requires-python = ">=3.11"
 
 dependencies = [
-    # Framework dependency (pip-installable v0.8.0+)
+    # Framework dependency
     "osprey-framework>=0.9.1",
 
     # ALS-specific dependencies
@@ -17,6 +17,14 @@ dependencies = [
 
     # NLP for PV finder
     "nltk>=3.8.1",
+
+    # Observability and telemetry
+    "logfire>=3.16.1",
+    "opentelemetry-api>=1.38.0",
+    "opentelemetry-sdk>=1.38.0",
+
+    # MCP support
+    "fastmcp",
 ]
 
 [project.optional-dependencies]
